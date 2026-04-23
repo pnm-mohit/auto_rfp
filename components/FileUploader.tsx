@@ -47,12 +47,18 @@ export function FileUploader({
     } else {
       setInternalProcessingStatus(status);
     }
-    
+
     // If status is "complete", hide the modal after a brief delay
     if (status === "complete") {
       setTimeout(() => {
         setShowProcessingModal(false);
       }, 2000);
+    }
+
+    // If the parent resets to "uploading" while the modal is open, treat it as
+    // an error recovery and close the modal so the user isn't stuck.
+    if (status === "uploading" && showProcessingModal) {
+      setShowProcessingModal(false);
     }
   };
 

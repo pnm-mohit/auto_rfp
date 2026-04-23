@@ -1,31 +1,32 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  FileText, 
-  FolderOpen, 
-  ExternalLink, 
-  RefreshCw,
+import { useToast } from '@/components/ui/use-toast';
+import {
   AlertCircle,
+  Check,
   Database,
-  ChevronDown,
-  ChevronRight,
+  FileText,
+  FolderOpen,
+  RefreshCw,
   Search,
-  CheckCircle2,
-  CircleDashed
+  Upload,
 } from 'lucide-react';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+  EmptyState,
+  KpiBand,
+  KpiCell,
+  KpiOk,
+  KpiWarn,
+  PageHeader,
+  SectionCard,
+  StatusPill,
+} from '@/components/layout';
 import { cn } from '@/lib/utils';
 
 interface ProjectDocument {
@@ -50,68 +51,160 @@ interface ProjectDocumentsProps {
   refreshKey?: number;
 }
 
-// Styling functions from the global DocumentList
-const getDocumentCardStyles = (fileType: string): {
-  iconBgClass: string;
-  iconColorClass: string;
-  textPillBgClass: string;
-  textPillTextColorClass: string;
-} => {
+interface LlamaCloudFileRecord {
+  id?: string;
+  name?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+  file_size?: number;
+  file_type?: string;
+  pipelineId?: string;
+  pipelineName?: string;
+}
+
+type FileTone = 'pdf' | 'docx' | 'csv' | 'txt' | 'other';
+
+interface FileTypeStyle {
+  tileBg: string;
+  tileFg: string;
+  label: string;
+}
+
+const FILE_TYPE_STYLES: Record<FileTone, FileTypeStyle> = {
+  pdf: { tileBg: '#FCE7EB', tileFg: '#8E1625', label: 'PDF' },
+  docx: { tileBg: '#E6F0FF', tileFg: '#1B4FB6', label: 'DOC' },
+  csv: { tileBg: '#E4F7EF', tileFg: '#0A6A4A', label: 'CSV' },
+  txt: { tileBg: '#F3F3F9', tileFg: '#160F44', label: 'TXT' },
+  other: { tileBg: '#F3F3F9', tileFg: '#6B6A87', label: 'FILE' },
+};
+
+const INITIAL_DOCUMENTS_SHOWN = 6;
+
+function resolveFileTone(fileType: string | undefined): FileTone {
   const type = (fileType || '').toLowerCase();
-  if (type === 'pdf') {
-    return {
-      iconBgClass: 'bg-red-50',
-      iconColorClass: 'text-red-600',
-      textPillBgClass: 'bg-red-500',
-      textPillTextColorClass: 'text-white',
-    };
+  if (type === 'pdf') return 'pdf';
+  if (type === 'docx' || type === 'doc') return 'docx';
+  if (type === 'csv') return 'csv';
+  if (type === 'txt' || type === 'text') return 'txt';
+  return 'other';
+}
+
+function formatDate(dateString: string | undefined): string {
+  if (!dateString) return '—';
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
   }
-  if (type === 'docx' || type === 'doc') {
-    return {
-      iconBgClass: 'bg-blue-50',
-      iconColorClass: 'text-blue-600',
-      textPillBgClass: 'bg-blue-500',
-      textPillTextColorClass: 'text-white',
-    };
-  }
-  if (type === 'csv') {
-    return {
-      iconBgClass: 'bg-green-50',
-      iconColorClass: 'text-green-600',
-      textPillBgClass: 'bg-green-500',
-      textPillTextColorClass: 'text-white',
-    };
-  }
-  if (type === 'txt' || type === 'text') {
-    return {
-      iconBgClass: 'bg-gray-50',
-      iconColorClass: 'text-gray-600',
-      textPillBgClass: 'bg-gray-500',
-      textPillTextColorClass: 'text-white',
-    };
-  }
-  return { // Fallback default
-    iconBgClass: 'bg-gray-100',
-    iconColorClass: 'text-gray-600',
-    textPillBgClass: 'bg-gray-500',
-    textPillTextColorClass: 'text-white',
+  return `${Math.round(size * 10) / 10} ${units[unitIndex]}`;
+}
+
+function relativeTime(dateString: string | undefined): string {
+  if (!dateString) return '—';
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return '—';
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.round(hrs / 24);
+  return `${days}d`;
+}
+
+function getFileTypeFromFilename(filename: string): string {
+  const extension = filename.split('.').pop()?.toLowerCase() || '';
+  const fileTypeMap: Record<string, string> = {
+    pdf: 'pdf',
+    doc: 'doc',
+    docx: 'docx',
+    csv: 'csv',
+    txt: 'text',
+    json: 'json',
   };
-};
+  return fileTypeMap[extension] || 'other';
+}
 
-const getPillText = (fileType: string): string => {
-  const type = (fileType || '').toLowerCase();
-  if (type === 'pdf') return 'PDF';
-  if (type === 'docx') return 'DOCX';
-  if (type === 'doc') return 'DOC';
-  if (type === 'csv') return 'CSV';
-  if (type === 'txt' || type === 'text') return 'TXT';
-  if (type.length > 0) return type.substring(0, 3).toUpperCase();
-  return 'FILE';
-};
+interface DocumentCardProps {
+  doc: ProjectDocument;
+}
 
-const INITIAL_DOCUMENTS_SHOWN = 12;
+function DocumentCard({ doc }: DocumentCardProps) {
+  const tone = resolveFileTone(doc.file_type);
+  const style = FILE_TYPE_STYLES[tone];
+  const status = (doc.status || '').toLowerCase();
+  const isComplete = status === 'success' || status === 'completed';
+  const isProcessing = status === 'processing' || status === 'in_progress';
+
+  const foot = doc.size_bytes
+    ? formatFileSize(doc.size_bytes)
+    : isProcessing
+      ? 'Ingesting…'
+      : doc.file_type === 'csv'
+        ? 'Dataset'
+        : 'Ready';
+
+  return (
+    <article className="rounded-[12px] border border-border bg-card p-5 flex flex-col gap-3 hover:shadow-sm transition-shadow">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-9 h-9 rounded-lg grid place-items-center text-[11px] font-extrabold shrink-0"
+            style={{ backgroundColor: style.tileBg, color: style.tileFg }}
+            aria-hidden="true"
+          >
+            {style.label}
+          </div>
+          <div
+            className="font-bold text-[13.5px] leading-[1.3] text-[color:var(--pam-blue)] truncate"
+            title={doc.name}
+          >
+            {doc.name}
+          </div>
+        </div>
+        {isComplete ? (
+          <Badge className="bg-[color:var(--pam-green)]/15 text-[color:var(--pam-green)] border-transparent rounded-full h-5 w-5 p-0 grid place-items-center shrink-0">
+            <Check className="!size-3" />
+          </Badge>
+        ) : isProcessing ? (
+          <Badge className="bg-[color:var(--pam-amber)]/12 text-[color:var(--pam-amber)] border-transparent rounded-full px-2 h-5 text-[10px] shrink-0">
+            <span className="inline-block w-[7px] h-[7px] rounded-full bg-[color:var(--pam-amber)] mr-1" />
+            Processing
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="rounded-full px-2 h-5 text-[10px] shrink-0">
+            {doc.status || 'Unknown'}
+          </Badge>
+        )}
+      </div>
+      <p className="text-[13px] leading-[1.55] text-muted-foreground line-clamp-2">
+        {doc.indexName ? `${doc.indexName} · ` : ''}
+        {tone === 'csv' ? 'Structured dataset ingested from the selected index.' : `Source file available to ground answers in this project.`}
+      </p>
+      <div className="flex items-center justify-between text-[12px] text-muted-foreground pt-3 border-t border-border">
+        <span>{formatDate(doc.created_at)}</span>
+        <span>{foot}</span>
+      </div>
+    </article>
+  );
+}
 
 export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProps) {
+  const router = useRouter();
+  const goToUpload = useCallback(() => {
+    router.push(`/upload?projectId=${projectId}`);
+  }, [router, projectId]);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [projectIndexes, setProjectIndexes] = useState<ProjectIndex[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,23 +212,8 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
   const [organizationConnected, setOrganizationConnected] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
-  const [expandedIndexes, setExpandedIndexes] = useState<Record<string, boolean>>({});
   const [shownDocuments, setShownDocuments] = useState<Record<string, number>>({});
   const { toast } = useToast();
-
-  // Helper function to determine file type from filename
-  const getFileTypeFromFilename = (filename: string): string => {
-    const extension = filename.split('.').pop()?.toLowerCase() || '';
-    const fileTypeMap: Record<string, string> = {
-      'pdf': 'pdf',
-      'doc': 'doc',
-      'docx': 'docx',
-      'csv': 'csv',
-      'txt': 'text',
-      'json': 'json'
-    };
-    return fileTypeMap[extension] || 'other';
-  };
 
   const fetchProjectDocuments = useCallback(async () => {
     try {
@@ -176,7 +254,9 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
       const projectData = await projectResponse.json();
 
       // Fetch all organization documents
-      const documentsResponse = await fetch(`/api/llamacloud/documents?organizationId=${projectData.organizationId}`);
+      const documentsResponse = await fetch(
+        `/api/llamacloud/documents?organizationId=${projectData.organizationId}`,
+      );
 
       if (!documentsResponse.ok) {
         const errorData = await documentsResponse.json();
@@ -186,39 +266,36 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
       const documentsData = await documentsResponse.json();
 
       // Filter documents to only include those from selected indexes
-      const selectedIndexIds = new Set(indexesData.currentIndexes.map((index: ProjectIndex) => index.id));
-      const filteredDocuments = (documentsData.documents || []).filter((doc: any) =>
-        selectedIndexIds.has(doc.pipelineId)
-      ).map((doc: any) => ({
-        ...doc,
-        indexName: doc.pipelineName,
-        indexId: doc.pipelineId,
-        // Map file properties to document properties for consistency
-        name: doc.name || 'Unknown',
-        status: doc.status || 'unknown',
-        created_at: doc.created_at,
-        updated_at: doc.updated_at,
-        size_bytes: doc.file_size,
-        file_type: doc.file_type || getFileTypeFromFilename(doc.name || ''),
-      }));
+      const selectedIndexIds = new Set(
+        indexesData.currentIndexes.map((index: ProjectIndex) => index.id),
+      );
+      const filteredDocuments: ProjectDocument[] = (documentsData.documents || [])
+        .filter((doc: LlamaCloudFileRecord) => doc.pipelineId && selectedIndexIds.has(doc.pipelineId))
+        .map((doc: LlamaCloudFileRecord) => ({
+          id: doc.id ?? `${doc.pipelineId ?? 'doc'}-${doc.name ?? Math.random().toString(36).slice(2)}`,
+          indexName: doc.pipelineName ?? 'Unknown index',
+          indexId: doc.pipelineId ?? '',
+          name: doc.name || 'Unknown',
+          status: doc.status || 'unknown',
+          created_at: doc.created_at ?? '',
+          updated_at: doc.updated_at ?? '',
+          size_bytes: doc.file_size,
+          file_type: doc.file_type || getFileTypeFromFilename(doc.name || ''),
+        }));
 
       setDocuments(filteredDocuments);
 
-      // Auto-expand first index and initialize shown documents
+      // Initialize shown documents per index
       if (filteredDocuments.length > 0) {
-        const indexNames: string[] = Array.from(new Set(filteredDocuments.map((doc: ProjectDocument) => doc.indexName)));
-        const initialExpanded: Record<string, boolean> = {};
+        const indexNames: string[] = Array.from(
+          new Set(filteredDocuments.map((doc: ProjectDocument) => doc.indexName)),
+        );
         const initialShown: Record<string, number> = {};
-
-        indexNames.forEach((indexName, index) => {
-          initialExpanded[indexName] = index === 0; // Expand first index
+        indexNames.forEach(indexName => {
           initialShown[indexName] = INITIAL_DOCUMENTS_SHOWN;
         });
-
-        setExpandedIndexes(initialExpanded);
         setShownDocuments(initialShown);
       }
-
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch project documents';
       setError(errorMessage);
@@ -240,362 +317,371 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     });
   };
 
-  const toggleIndex = (indexName: string) => {
-    setExpandedIndexes(prev => ({
-      ...prev,
-      [indexName]: !prev[indexName]
-    }));
-  };
-
   const showMoreDocuments = (indexName: string) => {
     setShownDocuments(prev => ({
       ...prev,
-      [indexName]: (prev[indexName] || INITIAL_DOCUMENTS_SHOWN) + INITIAL_DOCUMENTS_SHOWN
+      [indexName]: (prev[indexName] || INITIAL_DOCUMENTS_SHOWN) + INITIAL_DOCUMENTS_SHOWN,
     }));
   };
 
   const showAllDocuments = (indexName: string, totalCount: number) => {
     setShownDocuments(prev => ({
       ...prev,
-      [indexName]: totalCount
+      [indexName]: totalCount,
     }));
   };
 
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return 'Unknown size';
-    
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    
-    return `${Math.round(size * 100) / 100} ${units[unitIndex]}`;
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'completed':
-      case 'success':
-        return 'bg-green-100 text-green-800';
-      case 'processing':
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'error':
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // Normalise a doc's file type for tab filtering
+  const normalizedType = (doc: ProjectDocument): FileTone => resolveFileTone(doc.file_type);
 
   // Filter documents based on search term and active tab
-  const filteredDocuments = documents.filter(doc => {
-    const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.indexName?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesTab = activeTab === 'all' || doc.file_type === activeTab;
-    return matchesSearch && matchesTab;
-  });
+  const filteredDocuments = useMemo(
+    () =>
+      documents.filter(doc => {
+        const matchesSearch =
+          doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          doc.indexName?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesTab = activeTab === 'all' || normalizedType(doc) === activeTab;
+        return matchesSearch && matchesTab;
+      }),
+    [documents, searchTerm, activeTab],
+  );
 
-  // Extract unique file types for tab filters
-  const fileTypes = Array.from(new Set(documents.map(doc => doc.file_type).filter(Boolean))) as string[];
+  // KPI metrics
+  const metrics = useMemo(() => {
+    const total = documents.length;
+    const processing = documents.filter(
+      d => (d.status || '').toLowerCase() === 'processing' || (d.status || '').toLowerCase() === 'in_progress',
+    );
+    const ready = documents.filter(
+      d => (d.status || '').toLowerCase() === 'success' || (d.status || '').toLowerCase() === 'completed',
+    ).length;
+    const pagesIndexed = documents.reduce((sum, d) => sum + (d.size_bytes ? Math.max(1, Math.round((d.size_bytes || 0) / 40000)) : 0), 0);
+    const readyPct = total === 0 ? 0 : Math.round((ready / total) * 100);
+    const latest = documents
+      .map(d => (d.updated_at ? new Date(d.updated_at).getTime() : 0))
+      .filter(t => t > 0)
+      .sort((a, b) => b - a)[0];
+    const lastIngest = latest
+      ? relativeTime(new Date(latest).toISOString())
+      : '—';
+    const indexCount = projectIndexes.length;
+    return {
+      total,
+      processing,
+      pagesIndexed,
+      readyPct,
+      lastIngest,
+      indexCount,
+    };
+  }, [documents, projectIndexes]);
+
+  // File-type counts for filter tab chips
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: documents.length, pdf: 0, docx: 0, csv: 0, txt: 0 };
+    documents.forEach(doc => {
+      const t = normalizedType(doc);
+      if (t in counts) counts[t] += 1;
+    });
+    return counts;
+  }, [documents]);
+
+  // Group filtered documents by index
+  const documentsByIndex = useMemo(
+    () =>
+      filteredDocuments.reduce<Record<string, ProjectDocument[]>>((acc, doc) => {
+        if (!acc[doc.indexName]) acc[doc.indexName] = [];
+        acc[doc.indexName].push(doc);
+        return acc;
+      }, {}),
+    [filteredDocuments],
+  );
+
+  // Page header (shared across all states for consistency)
+  const pageHeader = (
+    <PageHeader
+      eyebrow="Project · Documents"
+      title="Documents"
+      sub="Every source file ingested into your selected knowledge indexes. Panamoure grounds every answer in these documents with inline citations."
+      pills={
+        <>
+          <StatusPill dot={organizationConnected ? 'green' : 'muted'}>
+            {organizationConnected ? 'LlamaCloud connected' : 'LlamaCloud not connected'}
+          </StatusPill>
+          <StatusPill variant="ghost" dot="muted">
+            Last ingest {metrics.lastIngest}
+          </StatusPill>
+        </>
+      }
+      actions={
+        <>
+          <div className="relative hidden md:block min-w-[260px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
+            <Input
+              placeholder="Search files or indexes…"
+              className="pl-9 h-9"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
+            <RefreshCw className={cn('mr-1', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={goToUpload}>
+            <Upload className="mr-1" />
+            Upload
+          </Button>
+        </>
+      }
+    />
+  );
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            <Skeleton className="h-5 w-32" />
-          </CardTitle>
-          <CardDescription>
-            <Skeleton className="h-4 w-64" />
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-16 w-full" />
+      <div className="space-y-6">
+        {pageHeader}
+        <KpiBand>
+          <KpiCell label="Documents" value="—" foot="Loading…" />
+          <KpiCell label="Pages indexed" value="—" />
+          <KpiCell label="Processing" value="—" />
+          <KpiCell label="Last ingest" value="—" />
+        </KpiBand>
+        <SectionCard title="Loading documents…">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                className="h-[138px] rounded-[12px] border border-border bg-[color:var(--pam-grey)] animate-pulse"
+              />
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </SectionCard>
+      </div>
     );
   }
 
   if (!organizationConnected) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Project Documents
-          </CardTitle>
-          <CardDescription>
-            Documents available to this project from selected indexes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <AlertCircle className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
-            <h3 className="text-lg font-medium mb-2">No LlamaCloud Connection</h3>
-            <p className="text-muted-foreground">
-              Your organization needs to be connected to LlamaCloud to access documents.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        {pageHeader}
+        <SectionCard title="Documents">
+          <EmptyState
+            icon={<AlertCircle />}
+            title="No LlamaCloud connection"
+            description="Your organization needs to be connected to LlamaCloud to access documents."
+          />
+        </SectionCard>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Project Documents
-          </CardTitle>
-          <CardDescription>
-            Documents available to this project from selected indexes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <AlertCircle className="mx-auto h-8 w-8 text-red-500 mb-3" />
-            <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Documents</h3>
-            <p className="text-red-600 mb-4">{error}</p>
-            <Button variant="outline" onClick={fetchProjectDocuments}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Try Again
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        {pageHeader}
+        <SectionCard title="Documents">
+          <EmptyState
+            icon={<AlertCircle />}
+            title="Error loading documents"
+            description={error}
+            actions={
+              <Button variant="outline" size="sm" onClick={fetchProjectDocuments}>
+                <RefreshCw className="mr-1" />
+                Try again
+              </Button>
+            }
+          />
+        </SectionCard>
+      </div>
     );
   }
 
   if (projectIndexes.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Project Documents
-          </CardTitle>
-          <CardDescription>
-            Documents available to this project from selected indexes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <Database className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
-            <h3 className="text-lg font-medium mb-2">No Indexes Selected</h3>
-            <p className="text-muted-foreground mb-4">
-              Select indexes above to access their documents for this project.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        {pageHeader}
+        <SectionCard title="Documents">
+          <EmptyState
+            icon={<Database />}
+            title="No indexes selected"
+            description="Select indexes below to access their documents for this project."
+          />
+        </SectionCard>
+      </div>
     );
   }
 
-  // Group documents by index
-  const documentsByIndex = filteredDocuments.reduce((acc, doc) => {
-    if (!acc[doc.indexName]) {
-      acc[doc.indexName] = [];
-    }
-    acc[doc.indexName].push(doc);
-    return acc;
-  }, {} as Record<string, ProjectDocument[]>);
+  if (documents.length === 0) {
+    return (
+      <div className="space-y-6">
+        {pageHeader}
+        <KpiBand>
+          <KpiCell label="Documents" value={0} foot={`Across ${metrics.indexCount} indexes`} />
+          <KpiCell label="Pages indexed" value={0} />
+          <KpiCell label="Processing" value={0} />
+          <KpiCell
+            label="Last ingest"
+            value={<span className="text-[28px]">{metrics.lastIngest}</span>}
+          />
+        </KpiBand>
+        <SectionCard title="Documents">
+          <EmptyState
+            icon={<FolderOpen />}
+            title="No documents yet"
+            description="No documents were found in the selected indexes. Upload a file to get started."
+            actions={
+              <Button size="sm" onClick={goToUpload}>
+                <Upload className="mr-1" />
+                Upload
+              </Button>
+            }
+          />
+        </SectionCard>
+      </div>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Project Documents
-            </CardTitle>
-            <CardDescription>
-              {documents.length} documents from {projectIndexes.length > 0 ? projectIndexes[0].name : 'no index selected'}
-            </CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {documents.length === 0 ? (
-          <div className="text-center py-8">
-            <FolderOpen className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
-            <h3 className="text-lg font-medium mb-2">No Documents Available</h3>
-            <p className="text-muted-foreground">
-              No documents were found in the selected indexes.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Search and Filter Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-between">
-              <div className="relative w-full sm:w-96">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                <Input
-                  placeholder="Search documents and indexes..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              
-              {fileTypes.length > 0 && (
-                <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
-                  <TabsList>
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    {fileTypes.map(type => (
-                      <TabsTrigger key={type} value={type}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-              )}
-            </div>
+    <div className="space-y-6">
+      {pageHeader}
 
-            {/* Documents Grid */}
-            {filteredDocuments.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
-                <h3 className="text-lg font-medium mb-2">No documents found</h3>
-                <p className="text-muted-foreground">
-                  Try adjusting your search or filters
-                </p>
-              </div>
+      <KpiBand>
+        <KpiCell
+          label="Documents"
+          value={metrics.total}
+          progress={100}
+          foot={`Across ${metrics.indexCount} ${metrics.indexCount === 1 ? 'index' : 'indexes'}`}
+        />
+        <KpiCell
+          label="Pages indexed"
+          value={metrics.pagesIndexed.toLocaleString()}
+          progress={metrics.readyPct}
+          foot={<KpiOk>{metrics.readyPct}% ready</KpiOk>}
+        />
+        <KpiCell
+          label="Processing"
+          value={metrics.processing.length}
+          progress={metrics.processing.length > 0 ? 40 : 0}
+          foot={
+            metrics.processing.length > 0 ? (
+              <KpiWarn>Ingesting {metrics.processing[0].name}</KpiWarn>
             ) : (
-              <div className="space-y-4">
-                {Object.entries(documentsByIndex).map(([indexName, indexDocs]) => {
-                  const isExpanded = expandedIndexes[indexName] || false;
-                  const shownCount = shownDocuments[indexName] || INITIAL_DOCUMENTS_SHOWN;
-                  const hasMore = indexDocs.length > shownCount;
-                  const visibleDocs = indexDocs.slice(0, shownCount);
-                  
-                  return (
-                    <Card key={indexName} className="border-l-4 border-l-blue-500">
-                      <Collapsible open={isExpanded} onOpenChange={() => toggleIndex(indexName)}>
-                        <CollapsibleTrigger asChild>
-                          <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
-                            <CardTitle className="text-base flex items-center">
-                              {isExpanded ? (
-                                <ChevronDown className="mr-2 h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="mr-2 h-4 w-4" />
-                              )}
-                              <Database className="mr-2 h-4 w-4" />
-                              {indexName}
-                              <Badge variant="secondary" className="ml-2">
-                                {indexDocs.length} {indexDocs.length === 1 ? 'document' : 'documents'}
-                              </Badge>
-                            </CardTitle>
-                          </CardHeader>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <CardContent className="pt-0">
-                            {/* Compact Card Grid */}
-                            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-                              {visibleDocs.map((doc) => {
-                                const styles = getDocumentCardStyles(doc.file_type || '');
-                                const pillText = getPillText(doc.file_type || '');
-                                const displayName = doc.name;
+              'All caught up'
+            )
+          }
+        />
+        <KpiCell
+          label="Last ingest"
+          value={<span className="text-[28px]">{metrics.lastIngest}</span>}
+          progress={100}
+          foot={`ago · ${metrics.total} docs`}
+        />
+      </KpiBand>
 
-                                return (
-                                  <Card key={doc.id} className="rounded-lg overflow-hidden shadow hover:shadow-md transition-all duration-200 flex flex-col bg-white">
-                                    <CardContent className="flex flex-col items-center p-3 text-center flex-grow w-full">
-                                      {/* Icon Area */}
-                                      <div className={cn(
-                                          "w-[50px] h-[60px] mb-2 rounded-md flex flex-col items-center justify-center pt-1 pb-1 px-1 relative shrink-0",
-                                          styles.iconBgClass
-                                      )}>
-                                        <FileText size={24} className={cn("mb-auto", styles.iconColorClass)} />
-                                        <div className={cn(
-                                            "text-[8px] font-bold leading-none py-0.5 px-1 rounded shadow-sm",
-                                            styles.textPillBgClass, styles.textPillTextColorClass
-                                        )}>
-                                          {pillText}
-                                        </div>
-                                        {/* Status indicator */}
-                                        {doc.status === 'success' || doc.status === 'completed' ? (
-                                          <div className="absolute top-[calc(50%-8px)] right-[2px] bg-white rounded-full p-0.5 shadow-md">
-                                            <CheckCircle2 size={12} className="text-green-500 block" />
-                                          </div>
-                                        ) : doc.status === 'processing' ? (
-                                          <div className="absolute top-[calc(50%-8px)] right-[2px] bg-white rounded-full p-0.5 shadow-md flex items-center justify-center">
-                                            <CircleDashed size={12} className="text-blue-500 block" />
-                                          </div>
-                                        ) : null}
-                                      </div>
+      {/* File-type filter tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="all">
+            All <span className="ml-1 text-muted-foreground text-[11px]">{typeCounts.all}</span>
+          </TabsTrigger>
+          <TabsTrigger value="pdf">
+            PDF <span className="ml-1 text-muted-foreground text-[11px]">{typeCounts.pdf}</span>
+          </TabsTrigger>
+          <TabsTrigger value="docx">
+            DOCX <span className="ml-1 text-muted-foreground text-[11px]">{typeCounts.docx}</span>
+          </TabsTrigger>
+          <TabsTrigger value="csv">
+            CSV <span className="ml-1 text-muted-foreground text-[11px]">{typeCounts.csv}</span>
+          </TabsTrigger>
+          <TabsTrigger value="txt">
+            TXT <span className="ml-1 text-muted-foreground text-[11px]">{typeCounts.txt}</span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-                                      <h3 className="text-xs font-semibold mb-1 leading-tight truncate w-full" title={displayName}>
-                                        {displayName}
-                                      </h3>
-                                      
-                                      {/* Status Badge */}
-                                      <div className="mb-1">
-                                        <Badge variant="outline" className={cn("text-[10px] px-1 py-0", getStatusColor(doc.status))}>
-                                          {doc.status}
-                                        </Badge>
-                                      </div>
-                                      
-                                      <p className="text-[10px] text-gray-500 mb-2">{formatDate(doc.created_at)}</p>
+      {/* Mobile-only search field (desktop version lives in the page header actions) */}
+      <div className="relative md:hidden">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
+        <Input
+          placeholder="Search files or indexes…"
+          className="pl-9"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
 
-                                    </CardContent>
-                                  </Card>
-                                );
-                              })}
-                            </div>
-                            
-                            {hasMore && (
-                              <div className="flex justify-center space-x-2 pt-6 border-t mt-6">
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => showMoreDocuments(indexName)}
-                                >
-                                  Show {Math.min(INITIAL_DOCUMENTS_SHOWN, indexDocs.length - shownCount)} more
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => showAllDocuments(indexName, indexDocs.length)}
-                                >
-                                  Show all ({indexDocs.length})
-                                </Button>
-                              </div>
-                            )}
-                          </CardContent>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </Card>
-                  );
-                })}
+      {/* No filter results */}
+      {filteredDocuments.length === 0 ? (
+        <SectionCard title="Documents">
+          <EmptyState
+            icon={<FileText />}
+            title="No results for this filter"
+            description="Try a different file type or clear the search."
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setActiveTab('all');
+                  setSearchTerm('');
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
+        </SectionCard>
+      ) : (
+        Object.entries(documentsByIndex).map(([indexName, indexDocs]) => {
+          const shownCount = shownDocuments[indexName] || INITIAL_DOCUMENTS_SHOWN;
+          const hasMore = indexDocs.length > shownCount;
+          const visibleDocs = indexDocs.slice(0, shownCount);
+          const hasProcessing = indexDocs.some(
+            d => (d.status || '').toLowerCase() === 'processing' || (d.status || '').toLowerCase() === 'in_progress',
+          );
+
+          return (
+            <SectionCard
+              key={indexName}
+              title={indexName}
+              actions={
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold">
+                    {indexDocs.length} {indexDocs.length === 1 ? 'document' : 'documents'}
+                  </Badge>
+                  {hasProcessing ? (
+                    <Badge className="bg-[color:var(--pam-amber)]/12 text-[color:var(--pam-amber)] border-transparent rounded-full px-2.5 py-0.5 text-[11px] font-semibold">
+                      Ingesting
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-[color:var(--pam-green)]/15 text-[color:var(--pam-green)] border-transparent rounded-full px-2.5 py-0.5 text-[11px] font-semibold">
+                      Active
+                    </Badge>
+                  )}
+                </div>
+              }
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {visibleDocs.map(doc => (
+                  <DocumentCard key={doc.id} doc={doc} />
+                ))}
               </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+
+              {hasMore ? (
+                <div className="flex justify-center gap-2 mt-5 pt-5 border-t border-border">
+                  <Button variant="outline" size="sm" onClick={() => showMoreDocuments(indexName)}>
+                    Show {Math.min(INITIAL_DOCUMENTS_SHOWN, indexDocs.length - shownCount)} more
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => showAllDocuments(indexName, indexDocs.length)}>
+                    Show all ({indexDocs.length})
+                  </Button>
+                </div>
+              ) : null}
+            </SectionCard>
+          );
+        })
+      )}
+    </div>
   );
-} 
+}

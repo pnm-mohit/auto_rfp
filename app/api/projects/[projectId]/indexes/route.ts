@@ -10,31 +10,32 @@ export async function GET(
 ) {
   try {
     const { projectId } = await params;
-    const currentUser = await organizationService.getCurrentUser();
-    
+
+    const [currentUser, project] = await Promise.all([
+      organizationService.getCurrentUser(),
+      db.project.findUnique({
+        where: { id: projectId },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              llamaCloudProjectId: true,
+              llamaCloudProjectName: true,
+              llamaCloudConnectedAt: true,
+            },
+          },
+          projectIndexes: true,
+        },
+      }),
+    ]);
+
     if (!currentUser) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
-
-    // Get project with organization info and project indexes
-    const project = await db.project.findUnique({
-      where: { id: projectId },
-      include: {
-        organization: {
-          select: {
-            id: true,
-            name: true,
-            llamaCloudProjectId: true,
-            llamaCloudProjectName: true,
-            llamaCloudConnectedAt: true,
-          },
-        },
-        projectIndexes: true,
-      },
-    });
 
     if (!project) {
       return NextResponse.json(
@@ -43,7 +44,6 @@ export async function GET(
       );
     }
 
-    // Check if user has access to this organization
     const isMember = await organizationService.isUserOrganizationMember(
       currentUser.id,
       project.organization.id
