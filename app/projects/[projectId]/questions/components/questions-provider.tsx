@@ -46,8 +46,10 @@ interface QuestionsContextType {
   selectedIndexes: Set<string>;
   setSelectedIndexes: (indexes: Set<string>) => void;
   availableIndexes: ProjectIndex[];
+  orgAvailableIndexes: ProjectIndex[];
   isLoadingIndexes: boolean;
   organizationConnected: boolean;
+  attachIndex: (indexId: string) => Promise<void>;
   
   // Multi-step response state
   useMultiStep: boolean;
@@ -120,6 +122,7 @@ export function QuestionsProvider({ children, projectId }: QuestionsProviderProp
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [selectedIndexes, setSelectedIndexes] = useState<Set<string>>(new Set());
   const [availableIndexes, setAvailableIndexes] = useState<ProjectIndex[]>([]);
+  const [orgAvailableIndexes, setOrgAvailableIndexes] = useState<ProjectIndex[]>([]);
   const [isLoadingIndexes, setIsLoadingIndexes] = useState(false);
   const [organizationConnected, setOrganizationConnected] = useState(false);
 
@@ -179,7 +182,8 @@ export function QuestionsProvider({ children, projectId }: QuestionsProviderProp
             // Use project's configured indexes as the available indexes for temporary selection
             const currentIndexes = data.currentIndexes || [] as ProjectIndex[];
             setAvailableIndexes(currentIndexes);
-            
+            setOrgAvailableIndexes(data.availableIndexes || []);
+
             // Initialize selection with all configured project indexes
             const currentIndexIds = new Set(currentIndexes.map((index: ProjectIndex) => index.id)) as Set<string>;
             setSelectedIndexes(currentIndexIds);
@@ -248,6 +252,32 @@ export function QuestionsProvider({ children, projectId }: QuestionsProviderProp
       console.error("Error in parallel loading:", error);
     });
   }, [projectId]);
+
+  const attachIndex = async (indexId: string) => {
+    const existing = availableIndexes.map((idx) => idx.id);
+    const indexIds = Array.from(new Set([...existing, indexId]));
+    const response = await fetch(`/api/projects/${projectId}/indexes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ indexIds }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      toast({
+        title: 'Could not attach knowledge base',
+        description: err.error || 'Please try again',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const attached = orgAvailableIndexes.find((idx) => idx.id === indexId);
+    if (attached) {
+      const next = [...availableIndexes, attached];
+      setAvailableIndexes(next);
+      setSelectedIndexes(new Set(next.map((idx) => idx.id)));
+    }
+    toast({ title: 'Knowledge base attached', description: attached?.name });
+  };
 
   // Handle answer changes
   const handleAnswerChange = (questionId: string, value: string) => {
@@ -656,8 +686,10 @@ export function QuestionsProvider({ children, projectId }: QuestionsProviderProp
     selectedIndexes,
     setSelectedIndexes,
     availableIndexes,
+    orgAvailableIndexes,
     isLoadingIndexes,
     organizationConnected,
+    attachIndex,
     
     // Multi-step response state
     useMultiStep,

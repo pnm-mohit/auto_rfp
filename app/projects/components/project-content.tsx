@@ -171,7 +171,7 @@ function ProjectOverviewShell({ projectId, orgId }: ShellProps) {
         title={project.name}
         sub={
           project.description ||
-          "Intelligent project workspace. Upload source material and let Panamoure draft, match, and refine RFP responses in your brand voice."
+          "Intelligent project workspace. Upload source material and let Panamoure RFP agent draft, match, and refine RFP responses in your brand voice."
         }
         pills={
           <>
@@ -347,7 +347,7 @@ function ProjectOverviewShell({ projectId, orgId }: ShellProps) {
               <StepItem
                 number={1}
                 title="Upload RFP document"
-                description="Drop in a PDF or Word file — Panamoure will extract questions automatically."
+                description="Drop in a PDF or Word file — Panamoure RFP agent will extract questions automatically."
                 href={`/projects/${projectId}/documents${orgId ? `?orgId=${orgId}` : ""}`}
               />
               <StepItem
@@ -371,8 +371,8 @@ function ProjectOverviewShell({ projectId, orgId }: ShellProps) {
             </StepList>
           </div>
           <div className="px-7 pb-7">
-            <InsightStrip title="Panamoure AI ready">
-              Once a document is uploaded, AI will auto-detect sections, extract questions and
+            <InsightStrip title="Panamoure RFP agent ready">
+              Once a document is uploaded, Panamoure RFP agent will auto-detect sections, extract questions and
               surface the three most-confident answers per question — drafted in your brand voice.
             </InsightStrip>
           </div>

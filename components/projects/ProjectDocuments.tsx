@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import useSWR from 'swr';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -197,6 +199,54 @@ function DocumentCard({ doc }: DocumentCardProps) {
         <span>{foot}</span>
       </div>
     </article>
+  );
+}
+
+interface ProjectStats {
+  questionCount: number;
+  sectionCount: number;
+  indexCount: number;
+  hasSourceRfp: boolean;
+  documentCount: number;
+}
+
+function SourceDocumentsCard({ projectId }: { projectId: string }) {
+  const { data } = useSWR<ProjectStats>(
+    `/api/projects/${projectId}/stats`,
+    (url: string) => fetch(url).then((r) => r.json()),
+    { revalidateOnFocus: true, dedupingInterval: 15000 },
+  );
+
+  if (!data?.hasSourceRfp) return null;
+
+  const questionLabel = data.questionCount === 1 ? 'question' : 'questions';
+  const sectionLabel = data.sectionCount === 1 ? 'section' : 'sections';
+
+  return (
+    <SectionCard title="Source RFP">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-1 py-1">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-9 h-9 rounded-lg grid place-items-center text-[11px] font-extrabold bg-[color:var(--pam-pink-soft)] text-[color:var(--pam-pink-ink)] shrink-0"
+            aria-hidden="true"
+          >
+            RFP
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold text-[14px] text-[color:var(--pam-blue)]">
+              Uploaded RFP processed
+            </div>
+            <div className="text-[12.5px] text-muted-foreground">
+              {data.questionCount} {questionLabel} extracted across {data.sectionCount}{' '}
+              {sectionLabel}
+            </div>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/projects/${projectId}/questions`}>View questions</Link>
+        </Button>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -402,7 +452,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     <PageHeader
       eyebrow="Project · Documents"
       title="Documents"
-      sub="Every source file ingested into your selected knowledge indexes. Panamoure grounds every answer in these documents with inline citations."
+      sub="Every source file ingested into your selected knowledge indexes. Panamoure RFP agent grounds every answer in these documents with inline citations."
       pills={
         <>
           <StatusPill dot={organizationConnected ? 'green' : 'muted'}>
@@ -441,6 +491,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     return (
       <div className="space-y-6">
         {pageHeader}
+        <SourceDocumentsCard projectId={projectId} />
         <KpiBand>
           <KpiCell label="Documents" value="—" foot="Loading…" />
           <KpiCell label="Pages indexed" value="—" />
@@ -465,7 +516,8 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     return (
       <div className="space-y-6">
         {pageHeader}
-        <SectionCard title="Documents">
+        <SourceDocumentsCard projectId={projectId} />
+        <SectionCard title="Knowledge base indexes">
           <EmptyState
             icon={<AlertCircle />}
             title="No LlamaCloud connection"
@@ -480,7 +532,8 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     return (
       <div className="space-y-6">
         {pageHeader}
-        <SectionCard title="Documents">
+        <SourceDocumentsCard projectId={projectId} />
+        <SectionCard title="Knowledge base indexes">
           <EmptyState
             icon={<AlertCircle />}
             title="Error loading documents"
@@ -501,7 +554,8 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     return (
       <div className="space-y-6">
         {pageHeader}
-        <SectionCard title="Documents">
+        <SourceDocumentsCard projectId={projectId} />
+        <SectionCard title="Knowledge base indexes">
           <EmptyState
             icon={<Database />}
             title="No indexes selected"
@@ -516,6 +570,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
     return (
       <div className="space-y-6">
         {pageHeader}
+        <SourceDocumentsCard projectId={projectId} />
         <KpiBand>
           <KpiCell label="Documents" value={0} foot={`Across ${metrics.indexCount} indexes`} />
           <KpiCell label="Pages indexed" value={0} />
@@ -525,7 +580,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
             value={<span className="text-[28px]">{metrics.lastIngest}</span>}
           />
         </KpiBand>
-        <SectionCard title="Documents">
+        <SectionCard title="Knowledge base indexes">
           <EmptyState
             icon={<FolderOpen />}
             title="No documents yet"
@@ -545,6 +600,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
   return (
     <div className="space-y-6">
       {pageHeader}
+      <SourceDocumentsCard projectId={projectId} />
 
       <KpiBand>
         <KpiCell
@@ -613,7 +669,7 @@ export function ProjectDocuments({ projectId, refreshKey }: ProjectDocumentsProp
 
       {/* No filter results */}
       {filteredDocuments.length === 0 ? (
-        <SectionCard title="Documents">
+        <SectionCard title="Knowledge base indexes">
           <EmptyState
             icon={<FileText />}
             title="No results for this filter"
