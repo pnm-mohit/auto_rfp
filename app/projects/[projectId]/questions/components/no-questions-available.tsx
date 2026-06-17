@@ -1,71 +1,62 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { ExternalLink, FileText, Plus, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { FileText, Upload, Plus, ExternalLink } from "lucide-react"
+import { EmptyState } from "@/components/layout"
 
 interface NoQuestionsAvailableProps {
-  projectId: string;
-  onUploadClick?: () => void;
+  projectId: string
+  onUploadClick?: () => void
 }
 
+const SAMPLE_FILE_URL =
+  "https://qluspotebpidccpfbdho.supabase.co/storage/v1/object/public/sample-files//RFP%20-%20Launch%20Services%20for%20Medium-Lift%20Payloads.pdf"
+
 export function NoQuestionsAvailable({ projectId, onUploadClick }: NoQuestionsAvailableProps) {
-  const router = useRouter();
+  const router = useRouter()
 
   const handleUploadClick = () => {
     if (onUploadClick) {
-      onUploadClick();
+      onUploadClick()
     } else {
-      // Fallback to old behavior if no callback provided
-      router.push(`/upload?projectId=${projectId}`);
+      router.push(`/upload?projectId=${projectId}`)
     }
-  };
+  }
 
   const handleAddManuallyClick = () => {
-    router.push(`/projects/${projectId}/questions/create`);
-  };
-
-  const sampleFileUrl = "https://qluspotebpidccpfbdho.supabase.co/storage/v1/object/public/sample-files//RFP%20-%20Launch%20Services%20for%20Medium-Lift%20Payloads.pdf";
+    router.push(`/projects/${projectId}/questions/create`)
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
-      <div className="text-center max-w-lg px-4">
-        <div className="mb-6">
-          <FileText className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-        </div>
-        <h3 className="text-2xl font-semibold text-gray-900 mb-3">No Questions Available</h3>
-        <p className="text-gray-600 mb-4 leading-relaxed">
-          To get started, upload documents for AI to extract questions automatically, or add questions manually.
-        </p>
-        
-        {/* Sample file suggestion */}
-        <div className="mb-8">
-          <p className="text-sm text-gray-500 mb-2">
-            Sample file below, you can download it and upload it to the project.
-          </p>
-          <a 
-            href={sampleFileUrl}
+    <EmptyState
+      icon={<FileText />}
+      title="No questions available"
+      description="Upload an RFP and Panamoure RFP agent will extract questions automatically — or add them manually to get started."
+      actions={
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button onClick={handleUploadClick} className="gap-1.5">
+              <Upload className="h-4 w-4" />
+              Upload documents
+            </Button>
+            <Button variant="outline" onClick={handleAddManuallyClick} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              Add manually
+            </Button>
+          </div>
+          <a
+            href={SAMPLE_FILE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+            className="inline-flex items-center gap-1 text-[12.5px] text-[color:var(--pam-blue)] hover:underline"
           >
             <FileText className="h-3.5 w-3.5" />
-            RFP - Launch Services for Medium-Lift Payloads
+            Sample RFP — Launch Services for Medium-Lift Payloads
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-        
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Button onClick={handleUploadClick} className="gap-2 px-6 py-2.5">
-            <Upload className="h-4 w-4" />
-            Upload Documents
-          </Button>
-          <Button variant="outline" onClick={handleAddManuallyClick} className="gap-2 px-6 py-2.5">
-            <Plus className="h-4 w-4" />
-            Add Manually
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-} 
+      }
+    />
+  )
+}

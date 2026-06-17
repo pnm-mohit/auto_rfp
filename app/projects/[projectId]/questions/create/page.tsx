@@ -1,249 +1,313 @@
 "use client"
 
-import React, { useState, useEffect, Suspense, use } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import React, { Suspense, use, useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { v4 as uuidv4 } from "uuid"
+import { ArrowLeft, Plus, Save, Trash2, Upload } from "lucide-react"
+
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
-import { toast } from "@/components/ui/use-toast"
+import { Textarea } from "@/components/ui/textarea"
 import { Toaster } from "@/components/ui/toaster"
-import { AlertCircle, Plus, Save, ArrowLeft, Trash2 } from "lucide-react"
-import { v4 as uuidv4 } from 'uuid'
+import { toast } from "@/components/ui/use-toast"
+import {
+  Eyebrow,
+  FooterNote,
+  InsightStrip,
+  StatusPill,
+} from "@/components/layout"
 
-type Section = {
-  id: string;
-  title: string;
-  questions: Question[];
+interface Question {
+  id: string
+  question: string
 }
 
-type Question = {
-  id: string;
-  question: string;
+interface Section {
+  id: string
+  title: string
+  questions: Question[]
 }
 
-function CreateQuestionsPageInner( { projectId }: { projectId: string } ) {
-  const router = useRouter();
-  
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [project, setProject] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Initialize with one empty section with one empty question
+interface ProjectPayload {
+  id?: string
+  name?: string
+}
+
+interface CreateQuestionsInnerProps {
+  projectId: string
+}
+
+function CreateQuestionsPageInner({ projectId }: CreateQuestionsInnerProps) {
+  const router = useRouter()
+
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [isSaving, setIsSaving] = useState<boolean>(false)
+  const [project, setProject] = useState<ProjectPayload | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
   const [sections, setSections] = useState<Section[]>([
     {
       id: uuidv4(),
       title: "",
-      questions: [{ id: uuidv4(), question: "" }]
-    }
-  ]);
+      questions: [{ id: uuidv4(), question: "" }],
+    },
+  ])
 
-  // Load project data
   useEffect(() => {
     if (!projectId) {
-      setError("No project ID provided");
-      setIsLoading(false);
-      return;
+      setError("No project ID provided")
+      setIsLoading(false)
+      return
     }
 
     const fetchProject = async () => {
       try {
-        const response = await fetch(`/api/projects/${projectId}`);
+        const response = await fetch(`/api/projects/${projectId}`)
         if (!response.ok) {
-          throw new Error("Failed to load project");
+          throw new Error("Failed to load project")
         }
-        const data = await response.json();
-        setProject(data);
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Error loading project:", error);
-        setError("Failed to load project. Please try again.");
-        setIsLoading(false);
+        const data: ProjectPayload = await response.json()
+        setProject(data)
+        setIsLoading(false)
+      } catch (fetchError) {
+        console.error("Error loading project:", fetchError)
+        setError("Failed to load project. Please try again.")
+        setIsLoading(false)
       }
-    };
+    }
 
-    fetchProject();
-  }, [projectId]);
+    fetchProject()
+  }, [projectId])
 
-  // Add new section
-  const addSection = () => {
-    setSections([
-      ...sections,
+  const addSection = useCallback(() => {
+    setSections((prev) => [
+      ...prev,
       {
         id: uuidv4(),
         title: "",
-        questions: [{ id: uuidv4(), question: "" }]
-      }
-    ]);
-  };
+        questions: [{ id: uuidv4(), question: "" }],
+      },
+    ])
+  }, [])
 
-  // Update section title
-  const updateSectionTitle = (sectionId: string, title: string) => {
-    setSections(sections.map(section => 
-      section.id === sectionId ? { ...section, title } : section
-    ));
-  };
+  const updateSectionTitle = useCallback((sectionId: string, title: string) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId ? { ...section, title } : section,
+      ),
+    )
+  }, [])
 
-  // Add question to section
-  const addQuestion = (sectionId: string) => {
-    setSections(sections.map(section => 
-      section.id === sectionId 
-        ? { ...section, questions: [...section.questions, { id: uuidv4(), question: "" }] }
-        : section
-    ));
-  };
+  const addQuestion = useCallback((sectionId: string) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: [...section.questions, { id: uuidv4(), question: "" }],
+            }
+          : section,
+      ),
+    )
+  }, [])
 
-  // Update question text
-  const updateQuestion = (sectionId: string, questionId: string, questionText: string) => {
-    setSections(sections.map(section => 
-      section.id === sectionId 
-        ? { 
-            ...section, 
-            questions: section.questions.map(q => 
-              q.id === questionId ? { ...q, question: questionText } : q
-            ) 
-          }
-        : section
-    ));
-  };
+  const updateQuestion = useCallback(
+    (sectionId: string, questionId: string, questionText: string) => {
+      setSections((prev) =>
+        prev.map((section) =>
+          section.id === sectionId
+            ? {
+                ...section,
+                questions: section.questions.map((q) =>
+                  q.id === questionId ? { ...q, question: questionText } : q,
+                ),
+              }
+            : section,
+        ),
+      )
+    },
+    [],
+  )
 
-  // Remove question
-  const removeQuestion = (sectionId: string, questionId: string) => {
-    setSections(sections.map(section => 
-      section.id === sectionId 
-        ? { 
-            ...section, 
-            questions: section.questions.filter(q => q.id !== questionId)
-          }
-        : section
-    ));
-  };
+  const removeQuestion = useCallback((sectionId: string, questionId: string) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              questions: section.questions.filter((q) => q.id !== questionId),
+            }
+          : section,
+      ),
+    )
+  }, [])
 
-  // Remove section
-  const removeSection = (sectionId: string) => {
-    setSections(sections.filter(section => section.id !== sectionId));
-  };
+  const removeSection = useCallback((sectionId: string) => {
+    setSections((prev) => prev.filter((section) => section.id !== sectionId))
+  }, [])
 
-  // Save all questions
-  const saveQuestions = async () => {
+  const saveQuestions = useCallback(async () => {
     if (!projectId) {
       toast({
         title: "Error",
         description: "No project ID provided",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    // Validate data
-    if (sections.some(section => !section.title.trim())) {
+    if (sections.some((section) => !section.title.trim())) {
       toast({
         title: "Validation Error",
         description: "All sections must have titles",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    if (sections.some(section => section.questions.some(q => !q.question.trim()))) {
+    if (
+      sections.some((section) =>
+        section.questions.some((q) => !q.question.trim()),
+      )
+    ) {
       toast({
         title: "Validation Error",
         description: "All questions must have content",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    setIsSaving(true);
+    setIsSaving(true)
 
     try {
-      // Prepare the RFP document format
       const rfpDocument = {
         documentId: projectId,
         documentName: project?.name || "Manual Questions",
-        sections: sections.map(section => ({
+        sections: sections.map((section) => ({
           id: section.id,
           title: section.title,
-          questions: section.questions
+          questions: section.questions,
         })),
         extractedAt: new Date().toISOString(),
-      };
+      }
 
-      // Save the questions to the database
       const response = await fetch(`/api/questions/${projectId}/create`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(rfpDocument),
-      });
+      })
 
       if (!response.ok) {
-        throw new Error("Failed to save questions");
+        throw new Error("Failed to save questions")
       }
 
       toast({
         title: "Success",
         description: "Questions saved successfully",
-      });
+      })
 
-      // Redirect to questions page
-      router.push(`/projects/${projectId}/questions`);
-    } catch (error) {
-      console.error("Error saving questions:", error);
+      router.push(`/projects/${projectId}/questions`)
+    } catch (saveError) {
+      console.error("Error saving questions:", saveError)
       toast({
         title: "Error",
         description: "Failed to save questions. Please try again.",
         variant: "destructive",
-      });
+      })
     } finally {
-      setIsSaving(false);
+      setIsSaving(false)
     }
-  };
+  }, [projectId, sections, project, router])
 
-  // Back to questions
-  const goBack = () => {
-    router.push(`/projects/${projectId}/questions`);
-  };
+  const goBack = useCallback(() => {
+    router.push(`/projects/${projectId}/questions`)
+  }, [projectId, router])
 
-  // Loading state
+  const totals = useMemo(() => {
+    const sectionCount = sections.length
+    const questionCount = sections.reduce(
+      (acc, section) => acc + section.questions.length,
+      0,
+    )
+    return { sectionCount, questionCount }
+  }, [sections])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <Spinner size="lg" className="mb-4" />
-          <p>Loading project...</p>
+          <p className="text-sm text-muted-foreground">Loading project…</p>
         </div>
       </div>
-    );
+    )
   }
 
-  // Error state
   if (error) {
     return (
-      <div className="p-8 text-center">
-        <AlertCircle className="h-10 w-10 text-red-500 mx-auto mb-4" />
-        <h3 className="text-lg font-medium">Error</h3>
-        <p className="text-muted-foreground mt-2">{error}</p>
-        <Button onClick={goBack} className="mt-4">Go Back</Button>
+      <div className="max-w-xl mx-auto py-16 px-6">
+        <div className="rounded-[12px] border border-border bg-card p-6">
+          <h3 className="text-lg font-bold text-foreground">
+            Something went wrong
+          </h3>
+          <p className="mt-2 text-sm text-[color:var(--pam-small)]">{error}</p>
+          <Button onClick={goBack} variant="outline" className="mt-4 gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Questions
+          </Button>
+        </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="container max-w-5xl py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={goBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">Create Questions</h1>
+    <div className="mx-auto w-full max-w-[960px] px-6 py-8">
+      <div className="flex items-center gap-2 mb-2.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={goBack}
+          className="gap-1.5 text-[color:var(--pam-small)] hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to Questions
+        </Button>
+      </div>
+
+      <Eyebrow className="mb-4">
+        Questions · {project?.name ?? "Project"}
+      </Eyebrow>
+
+      <header className="flex items-end justify-between gap-6 pb-6 border-b border-border mb-8 flex-wrap lg:flex-nowrap">
+        <div className="min-w-0">
+          <h1 className="text-[44px] leading-[1.05] font-extrabold tracking-[-0.03em] text-foreground">
+            Create questions
+          </h1>
+          <p className="mt-2.5 text-[15px] leading-[1.55] text-[color:var(--pam-small)] max-w-[560px]">
+            Add sections and questions manually, or import from CSV. Panamoure
+            will extract structure automatically when you upload an RFP
+            document.
+          </p>
+          <div className="flex items-center gap-2.5 mt-[18px] flex-wrap">
+            <StatusPill variant="ghost" dot="muted">
+              {totals.sectionCount} section
+              {totals.sectionCount === 1 ? "" : "s"} · {totals.questionCount}{" "}
+              question{totals.questionCount === 1 ? "" : "s"}
+            </StatusPill>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <Button 
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" className="gap-2" disabled>
+            <Upload className="h-4 w-4" />
+            Import CSV
+          </Button>
+          <Button
             variant="default"
             onClick={saveQuestions}
             disabled={isSaving}
@@ -252,111 +316,154 @@ function CreateQuestionsPageInner( { projectId }: { projectId: string } ) {
             {isSaving ? (
               <>
                 <Spinner className="h-4 w-4" />
-                Saving...
+                Saving…
               </>
             ) : (
               <>
                 <Save className="h-4 w-4" />
-                Save Questions
+                Save questions
               </>
             )}
           </Button>
         </div>
-      </div>
+      </header>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         {sections.map((section, sectionIndex) => (
-          <Card key={section.id} className="shadow-sm">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
-                <Input
-                  placeholder="Section Title"
-                  value={section.title}
-                  onChange={(e) => updateSectionTitle(section.id, e.target.value)}
-                  className="text-lg font-semibold border-0 p-0 h-auto focus-visible:ring-0"
+          <section
+            key={section.id}
+            className="rounded-[12px] border border-border bg-card overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-4 px-7 pt-7 pb-4 border-b border-border">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <span
+                  className="w-[3px] h-[18px] bg-[color:var(--pam-pink)] rounded-sm shrink-0"
+                  aria-hidden="true"
                 />
-                {sections.length > 1 && (
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => removeSection(section.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
+                <Input
+                  placeholder={`${sectionIndex + 1}. Section title`}
+                  value={section.title}
+                  onChange={(e) =>
+                    updateSectionTitle(section.id, e.target.value)
+                  }
+                  className="text-[16px] font-bold tracking-[-0.01em] h-auto py-1.5 px-2.5 flex-1 min-w-0"
+                />
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-[color:var(--pam-grey-2)] bg-[color:var(--pam-grey)] text-foreground"
+                >
+                  {section.questions.length} question
+                  {section.questions.length === 1 ? "" : "s"}
+                </Badge>
               </div>
-              <CardDescription>
-                {section.questions.length} question{section.questions.length !== 1 ? 's' : ''}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+              {sections.length > 1 ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSection(section.id)}
+                  aria-label="Delete section"
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="p-7 space-y-4">
               {section.questions.map((q, questionIndex) => (
-                <div key={q.id} className="flex items-start gap-2">
-                  <div className="flex-1">
-                    <Textarea
-                      placeholder="Enter question text"
-                      value={q.question}
-                      onChange={(e) => updateQuestion(section.id, q.id, e.target.value)}
-                      className="min-h-[80px]"
-                    />
+                <div key={q.id} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[12.5px] font-semibold text-[color:var(--pam-small)]">
+                      Question {questionIndex + 1}
+                    </label>
+                    {section.questions.length > 1 ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeQuestion(section.id, q.id)}
+                        className="h-7 px-2 text-[12px] font-medium text-[color:var(--pam-small)] hover:text-foreground gap-1"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Remove
+                      </Button>
+                    ) : null}
                   </div>
-                  {section.questions.length > 1 && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => removeQuestion(section.id, q.id)}
-                      className="mt-4"
-                    >
-                      <Trash2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  )}
+                  <Textarea
+                    placeholder="Enter question text"
+                    value={q.question}
+                    onChange={(e) =>
+                      updateQuestion(section.id, q.id, e.target.value)
+                    }
+                    className="min-h-[80px]"
+                  />
                 </div>
               ))}
-              
+
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-2 gap-1"
                 onClick={() => addQuestion(section.id)}
+                className="w-full justify-center border-dashed gap-2 mt-2"
               >
                 <Plus className="h-4 w-4" />
-                Add Question
+                Add question
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         ))}
-        
+
         <Button
           variant="outline"
-          className="w-full py-8 border-dashed gap-2"
+          size="lg"
           onClick={addSection}
+          className="w-full justify-center border-dashed gap-2 text-[color:var(--pam-blue)] font-semibold py-6"
         >
           <Plus className="h-4 w-4" />
-          Add New Section
+          Add new section
         </Button>
       </div>
-      
+
+      <InsightStrip title="Prefer to upload instead?">
+        Drop in a PDF or Word version of the RFP and Panamoure RFP agent will
+        extract sections and questions automatically — typically in under 30 seconds.{" "}
+        <Link
+          href={`/projects/${projectId}/documents`}
+          className="font-semibold text-[color:var(--pam-pink)] hover:underline"
+        >
+          Upload document →
+        </Link>
+      </InsightStrip>
+
+      <FooterNote />
+
       <Toaster />
     </div>
-  );
+  )
 }
 
-// Main export that wraps the inner component with Suspense
-export default function CreateQuestionsPage( { params }: { params: Promise<{ projectId: string }> } ) {
-  const { projectId } = use(params);
+interface PageProps {
+  params: Promise<{ projectId: string }>
+}
+
+export default function CreateQuestionsPage({ params }: PageProps) {
+  const { projectId } = use(params)
 
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background">
-        <div className="container mx-auto py-8 px-4 max-w-4xl">
-          <div className="flex flex-col items-center justify-center h-64">
-            <Spinner size="lg" className="mb-4" />
-            <p>Loading create questions page...</p>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background">
+          <div className="container mx-auto py-8 px-4 max-w-4xl">
+            <div className="flex flex-col items-center justify-center h-64">
+              <Spinner size="lg" className="mb-4" />
+              <p className="text-sm text-muted-foreground">
+                Loading create questions page…
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <CreateQuestionsPageInner projectId={projectId} />
     </Suspense>
-  );
-} 
+  )
+}

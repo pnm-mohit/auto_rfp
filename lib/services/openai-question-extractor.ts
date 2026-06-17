@@ -1,21 +1,20 @@
-import OpenAI from 'openai';
+import type { AzureOpenAI } from 'openai';
 import { IAIQuestionExtractor, AIServiceConfig } from '@/lib/interfaces/ai-service';
 import { ExtractedQuestions, ExtractedQuestionsSchema } from '@/lib/validators/extract-questions';
 import { DEFAULT_LANGUAGE_MODEL } from '@/lib/constants';
 import { AIServiceError } from '@/lib/errors/api-errors';
-import { env } from '@/lib/env';
+import { getAzureOpenAI } from '@/lib/azure-openai';
 
 /**
- * OpenAI-powered question extraction service
+ * Azure OpenAI-powered question extraction service. The `model` passed to the
+ * SDK is the Azure deployment name, not an OpenAI model id.
  */
 export class OpenAIQuestionExtractor implements IAIQuestionExtractor {
-  private client: OpenAI;
+  private client: AzureOpenAI;
   private config: AIServiceConfig;
 
   constructor(config: Partial<AIServiceConfig> = {}) {
-    this.client = new OpenAI({
-      apiKey: env.get('OPENAI_API_KEY')!,
-    });
+    this.client = getAzureOpenAI();
 
     this.config = {
       model: DEFAULT_LANGUAGE_MODEL,

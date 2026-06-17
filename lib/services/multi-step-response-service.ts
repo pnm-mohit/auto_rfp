@@ -14,8 +14,10 @@ import { LlamaIndexService } from '@/lib/llamaindex-service';
 import { generateId } from 'ai';
 import { db } from '@/lib/db';
 import { organizationService } from '@/lib/organization-service';
-import OpenAI from 'openai';
+import type { AzureOpenAI } from 'openai';
 import { env } from '@/lib/env';
+import { getAzureOpenAI } from '@/lib/azure-openai';
+import { ADVANCED_LANGUAGE_MODEL } from '@/lib/constants';
 
 /**
  * Multi-step response generation service implementation with AI-powered reasoning
@@ -23,7 +25,7 @@ import { env } from '@/lib/env';
 export class MultiStepResponseService implements IMultiStepResponseService {
   private config: MultiStepConfig;
   private llamaIndexService: LlamaIndexService;
-  private openai: OpenAI;
+  private openai: AzureOpenAI;
 
   constructor(config: Partial<MultiStepConfig> = {}) {
     this.config = {
@@ -38,10 +40,8 @@ export class MultiStepResponseService implements IMultiStepResponseService {
     // Initialize the LlamaIndex service (will be reconfigured per request)
     this.llamaIndexService = new LlamaIndexService();
     
-    // Initialize OpenAI for AI-powered reasoning
-    this.openai = new OpenAI({
-      apiKey: env.get('OPENAI_API_KEY')!,
-    });
+    // Initialize Azure OpenAI for AI-powered reasoning
+    this.openai = getAzureOpenAI();
   }
 
   /**
@@ -270,7 +270,7 @@ Return only valid JSON.`;
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: ADVANCED_LANGUAGE_MODEL,
         messages: [
           { role: 'system', content: 'You are an expert at analyzing RFP questions and determining optimal search strategies. Always respond with valid JSON only.' },
           { role: 'user', content: prompt }
@@ -424,7 +424,7 @@ Return only valid JSON.`;
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: ADVANCED_LANGUAGE_MODEL,
         messages: [
           { 
             role: 'system', 
@@ -555,7 +555,7 @@ Return only valid JSON.`;
       console.log('Prompt length:', prompt.length);
       
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: ADVANCED_LANGUAGE_MODEL,
         messages: [
           { 
             role: 'system', 
@@ -742,7 +742,7 @@ Return only valid JSON.`;
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: ADVANCED_LANGUAGE_MODEL,
         messages: [
           { role: 'system', content: 'You are an expert at validating RFP responses for quality and completeness. Always respond with valid JSON only.' },
           { role: 'user', content: prompt }

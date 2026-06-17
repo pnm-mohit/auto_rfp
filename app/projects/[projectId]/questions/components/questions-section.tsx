@@ -1,9 +1,9 @@
 "use client"
 
-import React, { Suspense, useState } from "react"
+import React, { Suspense, useMemo, useState } from "react"
 import { Toaster } from "@/components/ui/toaster"
+import { FooterNote, KpiBand, KpiCell, KpiOf, KpiOk, KpiWarn } from "@/components/layout"
 
-// Import the new components
 import { QuestionsProvider, useQuestions } from "./questions-provider"
 import { QuestionsHeader } from "./questions-header"
 import { NoQuestionsAvailable } from "./no-questions-available"
@@ -15,17 +15,17 @@ import { IndexSelector } from "./index-selector"
 import { UploadDialog } from "./upload-dialog"
 
 interface QuestionsSectionProps {
-  projectId: string;
+  projectId: string
 }
 
-// Inner component that uses the context
 function QuestionsSectionInner({ projectId }: QuestionsSectionProps) {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
-  
+
   const {
     isLoading,
     error,
     rfpDocument,
+    answers,
     unsavedQuestions,
     savingQuestions,
     searchQuery,
@@ -37,97 +37,213 @@ function QuestionsSectionInner({ projectId }: QuestionsSectionProps) {
     handleExportAnswers,
     selectedIndexes,
     availableIndexes,
+    orgAvailableIndexes,
     organizationConnected,
+    attachIndex,
     refreshQuestions,
-  } = useQuestions();
+    getCounts,
+  } = useQuestions()
 
   const handleUploadComplete = () => {
-    // Refresh the questions data after successful upload
-    refreshQuestions();
-  };
+    refreshQuestions()
+  }
+
+  const hasNoQuestions =
+    !rfpDocument ||
+    rfpDocument.sections.length === 0 ||
+    rfpDocument.sections.every((section) => section.questions.length === 0)
+
+  const totals = useMemo(() => {
+    if (!rfpDocument) {
+      return {
+        totalQuestions: 0,
+        totalSections: 0,
+        answered: 0,
+        unanswered: 0,
+        review: 0,
+        completion: 0,
+        avgConfidence: 0,
+      }
+    }
+    const counts = getCounts()
+    const totalQuestions = counts.all
+    const answered = counts.answered
+    const unanswered = counts.unanswered
+    const totalSections = rfpDocument.sections.length
+
+    const review = Object.entries(answers).filter(
+      ([, data]) => data?.text && data.text.trim() !== "" && (data.sources?.length ?? 0) === 0,
+    ).length
+
+    const completion = totalQuestions > 0 ? Math.round((answered / totalQuestions) * 100) : 0
+
+    const relevances = Object.values(answers)
+      .flatMap((data) => data?.sources ?? [])
+      .map((source) => source?.relevance)
+      .filter((value): value is number => typeof value === "number")
+
+    const avgConfidence =
+      relevances.length > 0
+        ? Math.round(
+            (relevances.reduce((sum, value) => sum + value, 0) / relevances.length) * 100,
+          )
+        : 0
+
+    return {
+      totalQuestions,
+      totalSections,
+      answered,
+      unanswered,
+      review,
+      completion,
+      avgConfidence,
+    }
+  }, [rfpDocument, answers, getCounts])
 
   return (
-    <div className="space-y-6 p-6 md:p-8 lg:p-12 min-h-screen">
-      {/* Loading state */}
-      {isLoading && <QuestionsLoadingState />}
+    <div className="min-h-screen px-6 py-8 md:px-10 lg:px-14 lg:py-10">
+      <div className="mx-auto w-full max-w-[1280px] space-y-0">
+        {isLoading ? <QuestionsLoadingState /> : null}
+        {error ? <QuestionsErrorState error={error} /> : null}
 
-      {/* Error state */}
-      {error && <QuestionsErrorState error={error} />}
-
-             {/* No questions state */}
-       {(!isLoading && !error && (!rfpDocument || rfpDocument.sections.length === 0 || 
-         rfpDocument.sections.every(section => section.questions.length === 0))) && (
-         <NoQuestionsAvailable projectId={projectId} onUploadClick={() => setIsUploadDialogOpen(true)} />
-       )}
-
-      {/* Questions available state */}
-      {!isLoading && !error && rfpDocument && rfpDocument.sections.length > 0 && 
-       !rfpDocument.sections.every(section => section.questions.length === 0) && (
-        <>
-          <QuestionsHeader
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            onSaveAll={saveAllAnswers}
-            onExport={handleExportAnswers}
-            unsavedCount={unsavedQuestions.size}
-            isSaving={savingQuestions.size > 0}
+        {!isLoading && !error && hasNoQuestions ? (
+          <NoQuestionsAvailable
+            projectId={projectId}
+            onUploadClick={() => setIsUploadDialogOpen(true)}
           />
+        ) : null}
 
-          {/* Index Selection Panel */}
-          <IndexSelector
-            availableIndexes={availableIndexes}
-            selectedIndexes={selectedIndexes}
-            organizationConnected={organizationConnected}
-          />
+        {!isLoading && !error && rfpDocument && !hasNoQuestions ? (
+          <>
+            <QuestionsHeader
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onSaveAll={saveAllAnswers}
+              onExport={handleExportAnswers}
+              unsavedCount={unsavedQuestions.size}
+              isSaving={savingQuestions.size > 0}
+              totalQuestions={totals.totalQuestions}
+              totalSections={totals.totalSections}
+            />
 
-          {/* Questions Filter Tabs */}
-          <QuestionsFilterTabs rfpDocument={rfpDocument} />
-        </>
-      )}
+            <KpiBand>
+              <KpiCell
+                label="Completion"
+                value={
+                  <>
+                    {totals.completion}
+                    <KpiOf>%</KpiOf>
+                  </>
+                }
+                progress={totals.completion}
+                foot={`${totals.answered} of ${totals.totalQuestions} answered`}
+              />
+              <KpiCell
+                label="Answered"
+                value={
+                  <>
+                    {totals.answered}
+                    <KpiOf>/ {totals.totalQuestions}</KpiOf>
+                  </>
+                }
+                progress={totals.completion}
+                foot={
+                  unsavedQuestions.size > 0 ? (
+                    <KpiOk>+{unsavedQuestions.size} pending save</KpiOk>
+                  ) : (
+                    "All saved"
+                  )
+                }
+              />
+              <KpiCell
+                label="Unanswered"
+                value={totals.unanswered}
+                progress={
+                  totals.totalQuestions > 0
+                    ? Math.round((totals.unanswered / totals.totalQuestions) * 100)
+                    : 0
+                }
+                foot={
+                  totals.review > 0 ? (
+                    <KpiWarn>{totals.review} need review</KpiWarn>
+                  ) : (
+                    "No drafts pending"
+                  )
+                }
+              />
+              <KpiCell
+                label="Avg. confidence"
+                value={
+                  <>
+                    {totals.avgConfidence}
+                    <KpiOf>%</KpiOf>
+                  </>
+                }
+                progress={totals.avgConfidence}
+                foot={
+                  totals.avgConfidence >= 80
+                    ? "High — across saved answers"
+                    : totals.avgConfidence > 0
+                      ? "Mixed — review low-confidence drafts"
+                      : "No confidence data yet"
+                }
+              />
+            </KpiBand>
 
-      {/* Source Details Dialog */}
+            <IndexSelector
+              availableIndexes={availableIndexes}
+              orgAvailableIndexes={orgAvailableIndexes}
+              selectedIndexes={selectedIndexes}
+              organizationConnected={organizationConnected}
+              projectId={projectId}
+              onRefresh={refreshQuestions}
+              onAttachIndex={attachIndex}
+            />
+
+            <QuestionsFilterTabs rfpDocument={rfpDocument} />
+          </>
+        ) : null}
+
+        <FooterNote />
+      </div>
+
       <SourceDetailsDialog
         isOpen={isSourceModalOpen}
         onClose={() => setIsSourceModalOpen(false)}
         source={selectedSource}
       />
-      
-             {/* Multi-step Response Dialog */}
-       <MultiStepResponseHandler />
 
-       {/* Upload Dialog */}
-       <UploadDialog
-         isOpen={isUploadDialogOpen}
-         onClose={() => setIsUploadDialogOpen(false)}
-         projectId={projectId}
-         onUploadComplete={handleUploadComplete}
-       />
-       
-       <Toaster />
-     </div>
-  );
+      <MultiStepResponseHandler />
+
+      <UploadDialog
+        isOpen={isUploadDialogOpen}
+        onClose={() => setIsUploadDialogOpen(false)}
+        projectId={projectId}
+        onUploadComplete={handleUploadComplete}
+      />
+
+      <Toaster />
+    </div>
+  )
 }
 
-// Main export that wraps the inner component with Suspense and Provider
 export function QuestionsSection({ projectId }: QuestionsSectionProps) {
   return (
     <QuestionsProvider projectId={projectId}>
-      <Suspense fallback={
-        <div className="space-y-6 p-6 md:p-8 lg:p-12 min-h-screen">
-          <div className="flex items-center justify-between">
-            <div className="h-8 w-36 bg-muted animate-pulse rounded"></div>
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-64 bg-muted animate-pulse rounded"></div>
-              <div className="h-9 w-24 bg-muted animate-pulse rounded"></div>
-              <div className="h-9 w-32 bg-muted animate-pulse rounded"></div>
+      <Suspense
+        fallback={
+          <div className="min-h-screen px-6 py-8 md:px-10 lg:px-14 lg:py-10">
+            <div className="mx-auto w-full max-w-[1280px] space-y-6">
+              <div className="h-10 w-64 animate-pulse rounded bg-muted" />
+              <div className="h-32 animate-pulse rounded-[14px] bg-muted" />
+              <div className="h-12 animate-pulse rounded-[10px] bg-muted" />
+              <div className="h-[420px] animate-pulse rounded-[12px] bg-muted" />
             </div>
           </div>
-          <div className="h-12 bg-muted animate-pulse rounded"></div>
-          <div className="h-[500px] bg-muted animate-pulse rounded"></div>
-        </div>
-      }>
+        }
+      >
         <QuestionsSectionInner projectId={projectId} />
       </Suspense>
     </QuestionsProvider>
-  );
-} 
+  )
+}

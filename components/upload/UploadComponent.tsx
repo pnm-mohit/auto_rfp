@@ -49,7 +49,8 @@ export function UploadComponent({ projectId }: UploadComponentProps) {
       });
 
       if (!extractResponse.ok) {
-        throw new Error('Failed to extract questions');
+        const errorBody = await extractResponse.json().catch(() => ({}));
+        throw new Error(errorBody.error || 'Failed to extract questions');
       }
 
       // Update status to extracting when OpenAI is processing
@@ -71,9 +72,13 @@ export function UploadComponent({ projectId }: UploadComponentProps) {
       }, 1000);
     } catch (error) {
       console.error('Error processing document:', error);
+      setProcessingStatus('uploading');
       toast({
-        title: 'Error',
-        description: 'Failed to process document',
+        title: 'Processing failed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Failed to process document',
         variant: 'destructive',
       });
     }

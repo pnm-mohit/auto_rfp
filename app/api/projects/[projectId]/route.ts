@@ -7,48 +7,46 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const { projectId } = await params;
 
-    console.log("API Route: Received params:", await params);
-    const projectId = (await params).projectId;
-    console.log("API Route: Extracted projectId:", projectId);
-    const currentUser = await organizationService.getCurrentUser();
-    
-    if (!currentUser) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-    
     if (!projectId) {
       return NextResponse.json(
         { error: 'Project ID is required' },
         { status: 400 }
       );
     }
-    
-    const project = await projectService.getProject(projectId);
-    
+
+    const [currentUser, project] = await Promise.all([
+      organizationService.getCurrentUser(),
+      projectService.getProject(projectId),
+    ]);
+
+    if (!currentUser) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     if (!project) {
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
       );
     }
-    
-    // Check if user is a member of the project's organization
+
     const isMember = await organizationService.isUserOrganizationMember(
       currentUser.id,
       project.organizationId
     );
-    
+
     if (!isMember) {
       return NextResponse.json(
         { error: 'You do not have access to this project' },
         { status: 403 }
       );
     }
-    
+
     return NextResponse.json(project);
   } catch (error) {
     console.error('Error fetching project:', error);
